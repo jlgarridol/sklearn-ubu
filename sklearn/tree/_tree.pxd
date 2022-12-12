@@ -5,7 +5,6 @@
 #          Arnaud Joly <arnaud.v.joly@gmail.com>
 #          Jacob Schreiber <jmschreiber91@gmail.com>
 #          Nelson Liu <nelson@nelsonliu.me>
-#          José Luis Garrido-Labrador <jlgarrido@ubu.es>
 #
 # License: BSD 3 clause
 

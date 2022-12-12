@@ -9,14 +9,12 @@
 #          Fares Hedayati <fares.hedayati@gmail.com>
 #          Jacob Schreiber <jmschreiber91@gmail.com>
 #          Nelson Liu <nelson@nelsonliu.me>
-#          José Luis Garrido-Labrador <jlgarrido@ubu.es>
 #
 # License: BSD 3 clause
 
 from cpython cimport Py_INCREF, PyObject, PyTypeObject
 
 from libc.stdlib cimport free
-from libc.math cimport fabs
 from libc.string cimport memcpy
 from libc.string cimport memset
 from libc.stdint cimport SIZE_MAX
@@ -153,14 +151,10 @@ cdef class DepthFirstTreeBuilder(TreeBuilder):
         # check input
         X, y, sample_weight = self._check_input(X, y, sample_weight)
 
-        cdef DOUBLE_t* sample_weight_ptr = NULL
-        if sample_weight is not None:
-            sample_weight_ptr = <DOUBLE_t*> sample_weight.data
-
         cdef DOUBLE_t* feature_weight_ptr = NULL
         if feature_weight is None:
             feature_weight = np.ones(X.shape[1], dtype=DTYPE)
-        feature_weight_ptr = <DOUBLE_t*> feature_weight.data        
+        feature_weight_ptr = <DOUBLE_t*> feature_weight.data  
 
         # Initial capacity
         cdef int init_capacity
@@ -181,7 +175,7 @@ cdef class DepthFirstTreeBuilder(TreeBuilder):
         cdef double min_impurity_decrease = self.min_impurity_decrease
 
         # Recursive partition (without actual recursion)
-        splitter.init(X, y, sample_weight_ptr, feature_weight_ptr)
+        splitter.init(X, y, sample_weight, feature_weight_ptr)
 
         cdef SIZE_t start
         cdef SIZE_t end
@@ -189,7 +183,6 @@ cdef class DepthFirstTreeBuilder(TreeBuilder):
         cdef SIZE_t parent
         cdef bint is_left
         cdef SIZE_t n_node_samples = splitter.n_samples
-        cdef double weighted_n_samples = splitter.weighted_n_samples
         cdef double weighted_n_node_samples
         cdef SplitRecord split
         cdef SIZE_t node_id
@@ -354,10 +347,6 @@ cdef class BestFirstTreeBuilder(TreeBuilder):
         # check input
         X, y, sample_weight = self._check_input(X, y, sample_weight)
 
-        cdef DOUBLE_t* sample_weight_ptr = NULL
-        if sample_weight is not None:
-            sample_weight_ptr = <DOUBLE_t*> sample_weight.data
-        
         cdef DOUBLE_t* feature_weight_ptr = NULL
         if feature_weight is None:
             feature_weight = np.ones(X.shape[1], dtype=DTYPE)
@@ -366,12 +355,9 @@ cdef class BestFirstTreeBuilder(TreeBuilder):
         # Parameters
         cdef Splitter splitter = self.splitter
         cdef SIZE_t max_leaf_nodes = self.max_leaf_nodes
-        cdef SIZE_t min_samples_leaf = self.min_samples_leaf
-        cdef double min_weight_leaf = self.min_weight_leaf
-        cdef SIZE_t min_samples_split = self.min_samples_split
 
         # Recursive partition (without actual recursion)
-        splitter.init(X, y, sample_weight_ptr, feature_weight_ptr)
+        splitter.init(X, y, sample_weight, feature_weight_ptr)
 
         cdef vector[FrontierRecord] frontier
         cdef FrontierRecord record
@@ -467,12 +453,9 @@ cdef class BestFirstTreeBuilder(TreeBuilder):
         cdef SIZE_t node_id
         cdef SIZE_t n_node_samples
         cdef SIZE_t n_constant_features = 0
-        cdef double weighted_n_samples = splitter.weighted_n_samples
         cdef double min_impurity_decrease = self.min_impurity_decrease
         cdef double weighted_n_node_samples
         cdef bint is_leaf
-        cdef SIZE_t n_left, n_right
-        cdef double imp_diff
 
         splitter.node_reset(start, end, &weighted_n_node_samples)
 
@@ -1500,7 +1483,6 @@ cdef _cost_complexity_prune(unsigned char[:] leaves_in_subtree, # OUT
 
         stack[CostComplexityPruningRecord] ccp_stack
         CostComplexityPruningRecord stack_record
-        int rc = 0
         SIZE_t node_idx
         stack[SIZE_t] node_indices_stack
 
@@ -1515,12 +1497,9 @@ cdef _cost_complexity_prune(unsigned char[:] leaves_in_subtree, # OUT
                                                     dtype=np.uint8)
         # nodes in subtree
         unsigned char[:] in_subtree = np.ones(shape=n_nodes, dtype=np.uint8)
-        DOUBLE_t[:] g_node = np.zeros(shape=n_nodes, dtype=np.float64)
         SIZE_t pruned_branch_node_idx
         DOUBLE_t subtree_alpha
         DOUBLE_t effective_alpha
-        SIZE_t child_l_idx
-        SIZE_t child_r_idx
         SIZE_t n_pruned_leaves
         DOUBLE_t r_diff
         DOUBLE_t max_float64 = np.finfo(np.float64).max

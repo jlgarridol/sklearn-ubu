@@ -290,6 +290,8 @@ Making a release
        git commit -m "Update stable to point to 0.999"
        git push origin main
 
+10. Update ``SECURITY.md`` to reflect the latest supported version.
+
 .. _release_checklist:
 
 Release checklist
@@ -308,6 +310,7 @@ The following GitHub checklist might be helpful in a release PR::
     * [ ] upload the wheels and source tarball to PyPI
     * [ ] https://github.com/scikit-learn/scikit-learn/releases publish (except for RC)
     * [ ] announce on mailing list and on Twitter, and LinkedIn
+    * [ ] update SECURITY.md in main branch (except for RC)
 
 Merging Pull Requests
 ---------------------

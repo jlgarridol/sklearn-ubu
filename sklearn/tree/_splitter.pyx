@@ -8,16 +8,13 @@
 #          Joel Nothman <joel.nothman@gmail.com>
 #          Fares Hedayati <fares.hedayati@gmail.com>
 #          Jacob Schreiber <jmschreiber91@gmail.com>
-#          José Luis Garrido-Labrador <jlgarrido@ubu.es>
 #
 # License: BSD 3 clause
 
 from ._criterion cimport Criterion
 
-from libc.stdlib cimport free
 from libc.stdlib cimport qsort
 from libc.string cimport memcpy
-from libc.string cimport memset
 
 import numpy as np
 
@@ -27,7 +24,6 @@ from ._utils cimport log
 from ._utils cimport rand_int
 from ._utils cimport rand_uniform
 from ._utils cimport RAND_R_MAX
-
 
 cdef double INFINITY = np.inf
 
@@ -84,8 +80,6 @@ cdef class Splitter:
         self.n_samples = 0
         self.n_features = 0
 
-        self.sample_weight = NULL
-
         self.max_features = max_features
         self.min_samples_leaf = min_samples_leaf
         self.min_weight_leaf = min_weight_leaf
@@ -101,10 +95,13 @@ cdef class Splitter:
         
         return self.criterion.proxy_impurity_improvement()*self.feature_weight[pos]
 
-    cdef int init(self,
-                   object X,
-                   const DOUBLE_t[:, ::1] y,
-                   DOUBLE_t* sample_weight, DOUBLE_t* feature_weight) except -1:
+
+    cdef int init(
+        self,
+        object X,
+        const DOUBLE_t[:, ::1] y,
+        const DOUBLE_t[:] sample_weight, DOUBLE_t* feature_weight
+    ) except -1:
         """Initialize the splitter.
 
         Take in the input data X, the target Y, and optional sample weights.
@@ -118,18 +115,20 @@ cdef class Splitter:
             This contains the inputs. Usually it is a 2d numpy array.
 
         y : ndarray, dtype=DOUBLE_t
-            This is the vector of targets, or true labels, for the samples
+            This is the vector of targets, or true labels, for the samples represented
+            as a Cython memoryview.
 
-        sample_weight : DOUBLE_t*
+        sample_weight : ndarray, dtype=DOUBLE_t
             The weights of the samples, where higher weighted samples are fit
             closer than lower weight samples. If not provided, all samples
-            are assumed to have uniform weight.
+            are assumed to have uniform weight. This is represented
+            as a Cython memoryview.
+
         feature_weight : DOUBLE_t*
             The weights of the features, where higher weighted features are fit
             closer than lower weight features. If not provided, all features
             are assumed to have same weight.
         """
-        cdef SIZE_t i, j
 
         self.rand_r_state = self.random_state.randint(0, RAND_R_MAX)
         cdef SIZE_t n_samples = X.shape[0]
@@ -141,16 +140,17 @@ cdef class Splitter:
 
         self.feature_weight = feature_weight
 
+        cdef SIZE_t i, j
         cdef double weighted_n_samples = 0.0
         j = 0
 
         for i in range(n_samples):
             # Only work with positively weighted samples
-            if sample_weight == NULL or sample_weight[i] != 0.0:
+            if sample_weight is None or sample_weight[i] != 0.0:
                 samples[j] = i
                 j += 1
 
-            if sample_weight != NULL:
+            if sample_weight is not None:
                 weighted_n_samples += sample_weight[i]
             else:
                 weighted_n_samples += 1.0
@@ -229,11 +229,13 @@ cdef class BaseDenseSplitter(Splitter):
 
     cdef SIZE_t n_total_samples
 
-    cdef int init(self,
-                  object X,
-                  const DOUBLE_t[:, ::1] y,
-                  DOUBLE_t* sample_weight,
-                  DOUBLE_t* feature_weight) except -1:
+    cdef int init(
+        self,
+        object X,
+        const DOUBLE_t[:, ::1] y,
+        const DOUBLE_t[:] sample_weight,
+        DOUBLE_t* feature_weight
+    ) except -1:
         """Initialize the splitter
 
         Returns -1 in case of failure to allocate memory (and raise MemoryError)
@@ -285,10 +287,7 @@ cdef class BestSplitter(BaseDenseSplitter):
         cdef SIZE_t f_i = n_features
         cdef SIZE_t f_j
         cdef SIZE_t p
-        cdef SIZE_t feature_idx_offset
-        cdef SIZE_t feature_offset
         cdef SIZE_t i
-        cdef SIZE_t j
 
         cdef SIZE_t n_visited_features = 0
         # Number of features discovered to be constant during the split search
@@ -298,7 +297,6 @@ cdef class BestSplitter(BaseDenseSplitter):
         cdef SIZE_t n_known_constants = n_constant_features[0]
         # n_total_constants = n_known_constants + n_found_constants
         cdef SIZE_t n_total_constants = n_known_constants
-        cdef DTYPE_t current_feature_value
         cdef SIZE_t partition_end
 
         _init_split(&best, end)
@@ -603,7 +601,6 @@ cdef class RandomSplitter(BaseDenseSplitter):
         cdef SIZE_t f_j
         cdef SIZE_t p
         cdef SIZE_t partition_end
-        cdef SIZE_t feature_stride
         # Number of features discovered to be constant during the split search
         cdef SIZE_t n_found_constants = 0
         # Number of features known to be constant and drawn without replacement
@@ -720,7 +717,7 @@ cdef class RandomSplitter(BaseDenseSplitter):
                     (self.criterion.weighted_n_right < min_weight_leaf)):
                 continue
 
-            current_proxy_improvement = self.get_criterion_weighted(current.pos)
+            current_proxy_improvement = self.criterion.proxy_impurity_improvement()
 
             if current_proxy_improvement > best_proxy_improvement:
                 best_proxy_improvement = current_proxy_improvement
@@ -779,11 +776,13 @@ cdef class BaseSparseSplitter(Splitter):
         # Parent __cinit__ is automatically called
         self.n_total_samples = 0
 
-    cdef int init(self,
-                  object X,
-                  const DOUBLE_t[:, ::1] y,
-                  DOUBLE_t* sample_weight,
-                  DOUBLE_t* feature_weight) except -1:
+    cdef int init(
+        self,
+        object X,
+        const DOUBLE_t[:, ::1] y,
+        const DOUBLE_t[:] sample_weight,
+        DOUBLE_t* feature_weight
+    ) except -1:
         """Initialize the splitter
 
         Returns -1 in case of failure to allocate memory (and raise MemoryError)
@@ -1116,7 +1115,6 @@ cdef class BestSparseSplitter(BaseSparseSplitter):
         cdef SIZE_t n_known_constants = n_constant_features[0]
         # n_total_constants = n_known_constants + n_found_constants
         cdef SIZE_t n_total_constants = n_known_constants
-        cdef DTYPE_t current_feature_value
 
         cdef SIZE_t p_next
         cdef SIZE_t p_prev
@@ -1248,7 +1246,7 @@ cdef class BestSparseSplitter(BaseSparseSplitter):
                         (self.criterion.weighted_n_right < min_weight_leaf)):
                     continue
 
-                current_proxy_improvement = self.get_criterion_weighted(current.pos)
+                current_proxy_improvement = self.criterion.proxy_impurity_improvement()
 
                 if current_proxy_improvement > best_proxy_improvement:
                     best_proxy_improvement = current_proxy_improvement
@@ -1313,7 +1311,6 @@ cdef class RandomSparseSplitter(BaseSparseSplitter):
         or 0 otherwise.
         """
         # Find the best split
-        cdef SIZE_t[::1] samples = self.samples
         cdef SIZE_t start = self.start
         cdef SIZE_t end = self.end
 
@@ -1322,7 +1319,6 @@ cdef class RandomSparseSplitter(BaseSparseSplitter):
         cdef SIZE_t n_features = self.n_features
 
         cdef DTYPE_t[::1] Xf = self.feature_values
-        cdef SIZE_t[::1] index_to_samples = self.index_to_samples
         cdef SIZE_t max_features = self.max_features
         cdef SIZE_t min_samples_leaf = self.min_samples_leaf
         cdef double min_weight_leaf = self.min_weight_leaf
@@ -1345,7 +1341,6 @@ cdef class RandomSparseSplitter(BaseSparseSplitter):
         cdef SIZE_t n_known_constants = n_constant_features[0]
         # n_total_constants = n_known_constants + n_found_constants
         cdef SIZE_t n_total_constants = n_known_constants
-        cdef SIZE_t partition_end
 
         cdef DTYPE_t min_feature_value
         cdef DTYPE_t max_feature_value
@@ -1472,7 +1467,7 @@ cdef class RandomSparseSplitter(BaseSparseSplitter):
                     (self.criterion.weighted_n_right < min_weight_leaf)):
                 continue
 
-            current_proxy_improvement = self.get_criterion_weighted(current.pos)
+            current_proxy_improvement = self.criterion.proxy_impurity_improvement()
 
             if current_proxy_improvement > best_proxy_improvement:
                 best_proxy_improvement = current_proxy_improvement
