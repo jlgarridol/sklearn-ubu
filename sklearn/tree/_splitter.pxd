@@ -21,12 +21,14 @@ cdef struct SplitRecord:
     # Data to track sample split
     SIZE_t feature         # Which feature to split on.
     SIZE_t pos             # Split samples array at the given position,
-                           # i.e. count of samples below threshold for feature.
-                           # pos is >= end if the node is a leaf.
+    #                      # i.e. count of samples below threshold for feature.
+    #                      # pos is >= end if the node is a leaf.
     double threshold       # Threshold to split at.
     double improvement     # Impurity improvement given parent node.
     double impurity_left   # Impurity of the left split.
     double impurity_right  # Impurity of the right split.
+    unsigned char missing_go_to_left  # Controls if missing values go to the left node.
+    SIZE_t n_missing       # Number of missing values for the feature being split on
 
 cdef class Splitter:
     # The splitter searches in the input space for a feature and a threshold
@@ -56,7 +58,7 @@ cdef class Splitter:
 
     cdef const DOUBLE_t[:, ::1] y
     cdef const DOUBLE_t[:] sample_weight
-    cdef DOUBLE_t* feature_weight
+    cdef DOUBLE_t[:] feature_weight
 
     # The samples vector `samples` is maintained by the Splitter object such
     # that the samples contained in a node are contiguous. With this setting,
@@ -75,14 +77,13 @@ cdef class Splitter:
     # This allows optimization with depth-based tree building.
 
     # Methods
-
-    cdef double get_criterion_weighted(self, const SIZE_t pos) nogil
     cdef int init(
         self,
         object X,
         const DOUBLE_t[:, ::1] y,
         const DOUBLE_t[:] sample_weight,
-        DOUBLE_t* feature_weight
+        const unsigned char[::1] missing_values_in_feature_mask,
+        DOUBLE_t[:] feature_weight
     ) except -1
 
     cdef int node_reset(
@@ -90,15 +91,15 @@ cdef class Splitter:
         SIZE_t start,
         SIZE_t end,
         double* weighted_n_node_samples
-    ) nogil except -1
+    ) except -1 nogil
 
     cdef int node_split(
         self,
         double impurity,   # Impurity of the node
         SplitRecord* split,
         SIZE_t* n_constant_features
-    ) nogil except -1
+    ) except -1 nogil
 
-    cdef void node_value(self, double* dest) nogil
+    cdef void node_value(self, double* dest) noexcept nogil
 
-    cdef double node_impurity(self) nogil
+    cdef double node_impurity(self) noexcept nogil
